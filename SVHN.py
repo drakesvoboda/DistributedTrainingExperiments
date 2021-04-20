@@ -20,9 +20,6 @@ from torch.utils.data.dataloader import DataLoader
 from torch.utils.data import random_split
 from torch.utils.tensorboard import SummaryWriter
 
-from parameter_server import *
-from boilerplate import *
-
 class DeepModel(nn.Module):
     def __init__(self, in_size=2700, out_size=10):
         super().__init__()

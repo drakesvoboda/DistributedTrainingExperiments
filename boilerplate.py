@@ -5,6 +5,8 @@ import torch
 from tqdm.auto import tqdm, trange
 from torch.utils.tensorboard import SummaryWriter
 
+from torch.autograd import Variable
+
 class TrainModel():
     def __init__(self, model):
         self.model = model
@@ -115,6 +117,7 @@ class Trainer():
         self.optimizer = optimizer
         self.running = False
         self.schedule = None
+        self.device = next(iter(model.parameters())).device
 
     def forward(self, input):
         """A forward pass through the model
@@ -129,6 +132,18 @@ class Trainer():
             return self.model(**input)
         else:
             return self.model(input)
+
+    def to_device(self, tensor):
+        if isinstance(tensor, dict):
+            return {key: self.to_device(value) for key, value in tensor.items()}
+        elif isinstance(tensor, tuple):
+            return tuple(self.to_device(x) for x in tensor)
+        elif isinstance(tensor, list):
+            return [self.to_device(x) for x in tensor]
+        elif isinstance(tensor, torch.Tensor):
+            return Variable(tensor.to(self.device))
+        else: 
+            return tensor
 
     def step(self, input: torch.tensor, label: torch.tensor):
         """A single training step. Can be overridden to define custom behavior. This method will receive the output of a single iteration of the dataloader 
@@ -167,6 +182,8 @@ class Trainer():
             
             for item in self.schedule.data():
                 if not self.running: break
+
+                item = self.to_device(item)
                 
                 self.schedule.on_batch_begin(self, *item)
 
@@ -259,6 +276,7 @@ class Validator(TrainCallback):
 
         with EvalModel(trainer.model) and torch.no_grad():
             for input, label in tqdm(self.dataloader, desc="Validating", leave=False, position=self.rank):
+                input, label = trainer.to_device(input), trainer.to_device(label)
                 output, loss = trainer.step(input, label)
                 total_loss += loss.data
                 total_acc += self.accuracy_fn(output, label)
@@ -403,9 +421,8 @@ class Throughput(TrainCallback):
         self.start = time.time()
         self.count = 0
 
-    def on_epoch_end(self, *args, **kwargs):
-        time = time.time - self.start()
-        cb_dict['Throughput (ex/s)'] = self.count / time
+    def on_epoch_end(self, trainer, schedule, cb_dict, *args, **kwargs):
+        cb_dict['Throughput (ex/s)'] = self.count / (time.time() - self.start)
 
     def on_batch_end(self, trainer, schedule, cb_dict, loss, output, input, label):
         self.count += input.shape[0]

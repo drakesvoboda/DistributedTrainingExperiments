@@ -1,3 +1,5 @@
+import copy
+
 import torch
 import torch.distributed as dist
 
@@ -85,8 +87,8 @@ class ASPTrainer(Trainer):
             if len(list(module.parameters())) <= 0 or len(list(module.children())) > 0: continue
             module.updates = None
             module.optimizer = self.optim_fn(module.parameters(recurse=False))
-            module.register_full_backward_hook(P3Trainer.backwards_pass_hook(self.reducer, name))
-            module.register_forward_pre_hook(P3Trainer.forward_pre_hook(self.reducer, name))
+            module.register_full_backward_hook(ASPTrainer.backwards_pass_hook(self.reducer, name))
+            module.register_forward_pre_hook(ASPTrainer.forward_pre_hook(self.reducer, name))
 
     @staticmethod
     def backwards_pass_hook(reducer, module_name):

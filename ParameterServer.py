@@ -12,7 +12,7 @@ def remote_method(method, rref, *args, **kwargs):
     args = [method, rref] + list(args)
     return rpc.rpc_sync(rref.owner(), call_method, args=args, kwargs=kwargs)
 
-class P3ParameterServer(object):
+class ParameterServer(object):
     def __init__(self, params, num_trainers):
         self.num_trainers = num_trainers
 
@@ -86,17 +86,18 @@ def get_parameter_server(params, num_trainers, shard):
     # Ensure that we get only one handle to the ParameterServer.
     with global_lock:
         if shard not in param_servers:
-            param_servers[shard] = P3ParameterServer(params, num_trainers)
+            param_servers[shard] = ParameterServer(params, num_trainers)
 
         return param_servers[shard]
 
-def run_parameter_server(rank, world_size, shard):
+def run_parameter_server(proc_num, rank, world_size, shard):
     # The parameter server just acts as a host for the model and responds to
     # requests from trainers.
     # rpc.shutdown() will wait for all workers to complete by default, which
     # in this case means that the parameter server will wait for all trainers
     # to complete, and then exit.
-    print("PS master initializing RPC")
+    print(rank, world_size, shard)
+    print(f"PS {shard} initializing RPC")
     rpc.init_rpc(name=f"parameter_server_{shard}", rank=rank, world_size=world_size)
     print(f"RPC initialized! Running parameter server shard {shard}...")
     rpc.shutdown()

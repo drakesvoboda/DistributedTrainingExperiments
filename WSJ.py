@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
-import torch.functional as F
+import torch.nn.functional as F
+
+from tqdm.auto import tqdm
 
 import pickle
 
@@ -87,7 +89,7 @@ def make_dicts(data_file):
     tag_dict = Dictionary()
 
     with open(data_file, "rb") as f:
-        for line in f:
+        for line in tqdm(f, desc='Making Dicts'):
             tokens = line.split()
             token_dict.add_tokens(tokens[::2])
             tag_dict.add_tokens(tokens[1::2])
@@ -107,7 +109,7 @@ class PartOfSpeechDataset(Dataset):
         self.labels = []
 
         with open(data_file, "rb") as f:
-            for line in f:
+            for line in tqdm(f, desc='Loading Dataset'):
                 tokens = line.split()
                 self.observations.append(token2id(tokens[::2]))
                 self.labels.append(state2id(tokens[1::2]))
@@ -146,12 +148,21 @@ class TestPartOfSpeechDataset(Dataset):
         inputs = pad_sequence(inputs, batch_first=True, padding_value=self.pad_token_id)    
         return inputs
 
-def load_dataset(token2id, state2id, pad_token_id):
-    fullset = dataset.PartOfSpeechDataset('wsj1-18.training', token2id, state2id, pad_token_id)
+def load_datasets(token2id, state2id, pad_token_id):
+    fullset = PartOfSpeechDataset('wsj1-18.training', token2id, state2id, pad_token_id)
     train_size = int(0.9 * len(fullset))
     valid_size = len(fullset) - train_size
     trainset, validset = torch.utils.data.random_split(fullset, [train_size, valid_size], generator=torch.Generator().manual_seed(42))
-    return trainset, validset
+
+    def collate_fn(examples):
+        inputs, labels = zip(*examples)
+
+        inputs = pad_sequence(inputs, batch_first=True, padding_value=pad_token_id)
+        labels = pad_sequence(labels, batch_first=True, padding_value=-100)
+        
+        return inputs, labels
+
+    return trainset, validset, collate_fn
 
 class ClassificationHead(nn.Module):
     def __init__(self, input_dim, num_classes):
@@ -167,55 +178,10 @@ class ClassificationHead(nn.Module):
 
         return x
 
-class Tagger(nn.Module):
-    def __init__(self, tag_dict, token_dict=None):
-        super(Tagger, self).__init__()
-        self.tag_dict = tag_dict
-        self.token_dict = token_dict
-
-    def forward(self, x): 
-        raise NotImplementedError
-
-    @classmethod
-    def from_pretrained(cls, model_file, *args, **kwargs):
-        loaded = torch.load(model_file)
-        tag_dict = pickle.loads(loaded["tag_dict"])
-        token_dict = pickle.loads(loaded["token_dict"]) if "token_dict" in loaded else None
-        model = cls(tag_dict, token_dict, *args, **kwargs)
-        model.load_state_dict(loaded)
-        return model
-
-    def state_dict(self):
-        state_dict = {
-            "model": super().state_dict(),
-            "tag_dict": pickle.dumps(self.tag_dict)
-        }
-
-        if self.token_dict is not None:
-            state_dict["token_dict"] = pickle.dumps(self.token_dict)
-
-        return state_dict
-
-    def load_state_dict(self, state_dict):  
-        super().load_state_dict(state_dict["model"])
-
-    def convert_tokens_to_ids(self, tokens):
-        return self.token_dict.convert_tokens_to_ids(tokens)
-
-    def convert_tags_to_ids(self, tags):
-        return self.tag_dict.convert_tokens_to_ids(tags)
-
-    def convert_ids_to_tags(self, ids):
-        return self.tag_dict.convert_ids_to_tokens(ids)
-
-    @property
-    def pad_token_id(self):
-        return self.token_dict.pad_token_id if self.token_dict is not None else None
-
-class LSTM(Tagger):
+class LSTM(nn.Module):
     def __init__(self, tag_dict, token_dict, embedding_dim, hidden_dim):
-        super(LSTM, self).__init__(tag_dict, token_dict)
-        self.embedding = nn.Embedding(len(token_dict), embedding_dim, padding_idx=self.token_dict.pad_token_id)
+        super(LSTM, self).__init__()
+        self.embedding = nn.Embedding(len(token_dict), embedding_dim, padding_idx=token_dict.pad_token_id)
         self.lstm = nn.LSTM(embedding_dim, hidden_dim, batch_first=True)
         self.cls = ClassificationHead(hidden_dim, len(tag_dict))
 
@@ -226,92 +192,48 @@ class LSTM(Tagger):
         
         return out
 
-class Bert(Tagger):
+def make_lstm():
+    tag_dict, token_dict = make_dicts('wsj1-18.training')
+
+    def convert_tokens_to_ids(tokens):
+        return token_dict.convert_tokens_to_ids(tokens)
+
+    def convert_tags_to_ids(tags):
+        return tag_dict.convert_tokens_to_ids(tags)
+
+    model = LSTM(tag_dict, token_dict, 128, 128)
+
+    return model, convert_tokens_to_ids, convert_tags_to_ids, token_dict.pad_token_id, len(tag_dict)
+
+class Bert(nn.Module):
     def __init__(self, tag_dict):
-        super(Bert, self).__init__(tag_dict)
-        self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-        config = BertConfig(hidden_size = 256,
-                            intermediate_size = 256*4,
+        super(Bert, self).__init__()
+        config = BertConfig(hidden_size = 66,
+                            intermediate_size = 66*2,
                             num_hidden_layers = 6,
                             num_attention_heads = 6)
-        self.transformer = BertModel()
-        self.cls = ClassificationHead(128, len(tag_dict))
+        self.transformer = BertModel(config)
+        self.cls = ClassificationHead(66, len(tag_dict))
 
     def forward(self, x):
         x = self.transformer(x)[0]
         x = self.cls(x)
         return x
 
-    def convert_tokens_to_ids(self, tokens):
-        return [self.tokenizer.encode(token.decode(), add_special_tokens=False)[0] for token in tokens]
+def make_bert():
+    tag_dict, token_dict = make_dicts('wsj1-18.training')
 
-    @property
-    def pad_token_id(self):
-        return self.tokenizer.pad_token_id
+    tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
 
-    @classmethod
-    def from_pretrained(cls, model_file, *args, **kwargs):
-        loaded = torch.load(model_file)
-        tag_dict = pickle.loads(loaded["tag_dict"])
-        model = cls(tag_dict, *args, **kwargs)
-        model.load_state_dict(loaded)
-        return model
+    def convert_tokens_to_ids(tokens):
+        return [tokenizer.encode(token.decode(), add_special_tokens=False)[0] for token in tokens]
 
-class ResidualBlock(nn.Module):
-    def __init__(self, in_channels, out_channels):
-        super(ResidualBlock, self).__init__()
-        self.in_channels, self.out_channels = in_channels, out_channels
+    def convert_tags_to_ids(tags):
+        return tag_dict.convert_tokens_to_ids(tags)
 
-        self.shortcut_model = nn.Sequential(
-            nn.Conv1d(self.in_channels, self.out_channels, kernel_size=1, bias=False),
-            nn.BatchNorm1d(self.out_channels))
-        
-        self.blocks = nn.Sequential(
-            nn.Conv1d(self.in_channels, self.out_channels, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm1d(self.out_channels),
-            nn.ReLU(inplace=True),
-            nn.Conv1d(self.out_channels, self.out_channels, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm1d(self.out_channels),
-        )
+    model = Bert(tag_dict)
 
-        self.activation = nn.ReLU(inplace=True)
-
-    @property
-    def should_apply_shortcut(self):
-        return self.in_channels != self.out_channels
-    
-    def shortcut(self, x):
-        if self.should_apply_shortcut: x = self.shortcut_model(x)
-        return x
-
-    def forward(self, x):
-        x = self.blocks(x) + self.shortcut(x)
-        x = self.activation(x)
-        return x 
-
-class ResNet(Tagger):
-    def __init__(self, tag_dict, token_dict, embedding_dim):
-        super(ResNet, self).__init__(tag_dict, token_dict)
-
-        self.embedding = nn.Embedding(len(token_dict), embedding_dim, padding_idx=self.token_dict.pad_token_id)
-
-        self.model = nn.Sequential(
-            ResidualBlock(embedding_dim, embedding_dim),
-            ResidualBlock(embedding_dim, embedding_dim),
-            ResidualBlock(embedding_dim, 512),
-            ResidualBlock(512, 512),
-            ResidualBlock(512, 512)
-        )
-
-        self.cls = ClassificationHead(512, len(tag_dict))
-
-    def forward(self, x):
-        x = self.embedding(x)
-        x = x.permute(0,2,1)
-        x = self.model(x)
-        x = x.permute(0,2,1)
-        x = self.cls(x)
-        return x
+    return model, convert_tokens_to_ids, convert_tags_to_ids, tokenizer.pad_token_id, len(tag_dict)
 
 def TaggerAccuracy(output, label):
     output = output.view(-1, output.shape[-1])
