@@ -1,24 +1,10 @@
-import argparse
-import os
-import time
-from threading import Lock
-
 import torch
-import torchvision
-import torch.multiprocessing as mp
-import numpy as np
-import matplotlib.pyplot as plt
 import torch.nn as nn
 import torch.nn.functional as F
-import torch.distributed as dist
-import torch.distributed.rpc as rpc
 
-from torchvision.datasets import SVHN
 from torchvision import transforms
-from torchvision.utils import make_grid
-from torch.utils.data.dataloader import DataLoader
-from torch.utils.data import random_split
-from torch.utils.tensorboard import SummaryWriter
+from torchvision.datasets import SVHN
+
 
 class DeepModel(nn.Module):
     def __init__(self, in_size=2700, out_size=10):
@@ -92,23 +78,3 @@ def load_datasets(data_dir):
 def accuracy(outputs, labels):
     _, preds = torch.max(outputs, dim=1)
     return torch.tensor(torch.sum(preds == labels).item() / len(preds))
-
-def calc_stats(outputs):
-    batch_losses = [x['val_loss'] for x in outputs]
-    epoch_loss = torch.stack(batch_losses).mean()
-    batch_accs = [x['val_acc'] for x in outputs]
-    epoch_acc = torch.stack(batch_accs).mean()
-    return {'val_loss': epoch_loss.item(), 'val_acc': epoch_acc.item()}
-
-def evaluate(model, val_loader):
-    model.eval()
-    with torch.no_grad():
-        outputs = [eval_step(model, batch) for batch in tqdm(val_loader, desc=f"Validating", leave=False)]
-        result = calc_stats(outputs)
-
-    model.train()
-    return result
-
-def epoch_report(epoch, result):
-    print("Epoch [{}], val_loss: {:.4f}, val_acc: {:.4f}".format(epoch, result['val_loss'], result['val_acc']))
-

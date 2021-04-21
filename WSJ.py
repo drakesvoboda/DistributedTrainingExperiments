@@ -1,22 +1,17 @@
+from tqdm.auto import tqdm
+from collections import Counter
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-from tqdm.auto import tqdm
-
-import pickle
+from torch.nn.utils.rnn import pad_sequence
+from torch.utils.data import Dataset
 
 from transformers import (
     BertModel,
     BertTokenizer,
     BertConfig
 )
-
-from collections import Counter
-
-import torch
-from torch.nn.utils.rnn import pad_sequence
-from torch.utils.data import Dataset
 
 class TaggerLoss(nn.Module):
     def __init__(self, num_classes):
