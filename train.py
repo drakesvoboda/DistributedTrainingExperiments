@@ -2,20 +2,20 @@ import argparse
 import os
 import time
 
-from boilerplate import *
-from ASPTrainer import *
-from EASGDTrainer import *
-from DDPTrainer import *
-
-import SVHN as SVHN
-import WSJ as WSJ
-
 import torch
 import torch.multiprocessing as mp
 import torch.nn.functional as F
 
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.data.sampler import RandomSampler
+
+import SVHN as SVHN
+import WSJ as WSJ
+
+from boilerplate import *
+from ASPTrainer import *
+from EASGDTrainer import *
+from DDPTrainer import *
 
 # For deterministic runs
 torch.manual_seed(0)
@@ -80,8 +80,8 @@ def train(proc_num, args):
 
     sampler = RandomSampler(trainset, replacement=True, num_samples=args.iterations*args.batch_size)
 
-    trainloader = DataLoader(trainset, args.batch_size, collate_fn=collate_fn, sampler=sampler, num_workers=4)
-    validloader = DataLoader(validset, args.batch_size, collate_fn=collate_fn, num_workers=4)
+    trainloader = DataLoader(trainset, args.batch_size, collate_fn=collate_fn, sampler=sampler, num_workers=0)
+    validloader = DataLoader(validset, args.batch_size, collate_fn=collate_fn, num_workers=0)
 
     # model = model.cuda()
 
