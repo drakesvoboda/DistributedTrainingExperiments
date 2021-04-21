@@ -34,6 +34,7 @@ def main():
     parser.add_argument('-d', '--dataset', type=str, default='SVHN')
     parser.add_argument('-t', '--tau', type=int, default=5)
     parser.add_argument('-tr', '--trainer', type=str, default='DDP')
+    parser.add_argument('-l', '--log', type=bool, default=False)
     args = parser.parse_args()
     args.world_size = args.num_proc * args.nodes
 
@@ -79,8 +80,8 @@ def train(proc_num, args):
 
     sampler = RandomSampler(trainset, replacement=True, num_samples=args.iterations*args.batch_size)
 
-    trainloader = DataLoader(trainset, args.batch_size, collate_fn=collate_fn, sampler=sampler, num_workers=0)
-    validloader = DataLoader(validset, args.batch_size, collate_fn=collate_fn, num_workers=0)
+    trainloader = DataLoader(trainset, args.batch_size, collate_fn=collate_fn, sampler=sampler, num_workers=4, pin_memory=True)
+    validloader = DataLoader(validset, args.batch_size, collate_fn=collate_fn, num_workers=4, pin_memory=True)
 
     # model = model.cuda()
 
@@ -126,7 +127,7 @@ def train(proc_num, args):
         Logger()
     ]
 
-    if rank == 0:
+    if args.log and rank == 0:
         callbacks.append(TensorboardLogger(name=args.trainer, on_epoch_metrics=["Loss/Validation", "Accuracy/Validation", "Throughput (ex/s)"]))
 
     schedule = TrainingSchedule(trainloader, num_epochs, callbacks)  
