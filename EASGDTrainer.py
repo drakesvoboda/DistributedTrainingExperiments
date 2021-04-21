@@ -28,6 +28,11 @@ class ReducerThread(threading.Thread):
         self.to_send = PriorityQueue()
         self.in_flight = []
         self.max_in_flight = max_in_flight
+     
+        def chunk_param(param):
+            param = param.view(-1)
+            num_chunks = (len(param)//250000) + 1
+            return torch.chunk(param, chunks=num_chunks)
 
         def get_param_dict(module: torch.nn.Module):
             res = {}
@@ -39,10 +44,11 @@ class ReducerThread(threading.Thread):
             for module_name, module in module.named_modules():
                 priority += 1
                 for param_name, param in module.named_parameters(recurse=False):
-                    res[idx] = param
-                    priorities[idx] = priority
-                    name2key[f"{module_name}.{param_name}"] = idx
-                    idx += 1
+                    for chunk_idx, chunk in enumerate(chunk_param(param)):
+                        res[idx] = chunk
+                        priorities[idx] = priority
+                        name2key[f"{module_name}.{param_name}.{chunk_idx}"] = idx
+                        idx += 1
 
             return res, name2key, priorities
 
@@ -135,10 +141,13 @@ class EASGDTrainer(Trainer):
                 self.first_name = name
                 break
 
-        for idx, (module_name, module) in enumerate(model.named_modules()):
+        index = 0
+
+        for module_name, module in model.named_modules():
             if len(list(module.parameters())) <= 0 or len(list(module.children())) > 0: continue
             module.updates = None
-            module.iteration = idx if stagger else 0
+            module.iteration = index if stagger else 0
+            index += 1
             module.optimizer = self.optim_fn(module.parameters(recurse=False))
             module.register_full_backward_hook(EASGDTrainer.backwards_pass_hook(self.reducer, self.tau, module_name))
             module.register_forward_pre_hook(EASGDTrainer.forward_pre_hook(num_trainers, module_name))

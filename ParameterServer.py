@@ -96,7 +96,6 @@ def run_parameter_server(proc_num, rank, world_size, shard):
     # rpc.shutdown() will wait for all workers to complete by default, which
     # in this case means that the parameter server will wait for all trainers
     # to complete, and then exit.
-    print(rank, world_size, shard)
     print(f"PS {shard} initializing RPC")
     rpc.init_rpc(name=f"parameter_server_{shard}", rank=rank, world_size=world_size)
     print(f"RPC initialized! Running parameter server shard {shard}...")

@@ -128,7 +128,7 @@ def train(proc_num, args):
     ]
 
     if args.log and rank == 0:
-        callbacks.append(TensorboardLogger(name=args.trainer, on_epoch_metrics=["Loss/Validation", "Accuracy/Validation", "Throughput (ex/s)"]))
+        callbacks.append(TensorboardLogger(name=f'{args.trainer}-{args.dataset}-{args.model}', on_epoch_metrics=["Loss/Validation", "Accuracy/Validation", "Throughput (ex/s)"]))
 
     schedule = TrainingSchedule(trainloader, num_epochs, callbacks)  
     

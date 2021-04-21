@@ -45,15 +45,15 @@ class ConvNet(nn.Module):
         self.conv1 = nn.Conv2d(3, 6, 5, padding=1)
         self.pool = nn.MaxPool2d(2, 2)
         self.conv2 = nn.Conv2d(6, 16, 5, padding=1)
-        self.fc1 = nn.Linear(576, 64)
-        self.fc3 = nn.Linear(64, 10)
+        self.fc = nn.Linear(576, 64)
+        self.cls = nn.Linear(64, 10)
 
     def forward(self, x, y=None):
         x = self.pool(F.relu(self.conv1(x)))
         x = self.pool(F.relu(self.conv2(x)))
         x = torch.flatten(x, start_dim=1)
-        x = F.relu(self.fc1(x))
-        x = self.fc3(x)
+        x = F.relu(self.fc(x))
+        x = self.cls(x)
         return x
 
 def get_exec_device():
