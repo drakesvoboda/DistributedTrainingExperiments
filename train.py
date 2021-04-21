@@ -80,8 +80,8 @@ def train(proc_num, args):
 
     sampler = RandomSampler(trainset, replacement=True, num_samples=args.iterations*args.batch_size)
 
-    trainloader = DataLoader(trainset, args.batch_size, collate_fn=collate_fn, sampler=sampler, num_workers=4, pin_memory=True)
-    validloader = DataLoader(validset, args.batch_size, collate_fn=collate_fn, num_workers=4, pin_memory=True)
+    trainloader = DataLoader(trainset, args.batch_size, collate_fn=collate_fn, sampler=sampler, num_workers=4)
+    validloader = DataLoader(validset, args.batch_size, collate_fn=collate_fn, num_workers=4)
 
     # model = model.cuda()
 

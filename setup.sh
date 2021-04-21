@@ -6,8 +6,8 @@ conda create -n pytorch_env -y pytorch torchvision torchaudio numpy matplotlib t
 conda activate pytorch_env
 yes | pip install sklearn psrecord future transformers
 conda install -y -c conda-forge tensorboard
-git clone https://github.com/drakesvoboda/eecs598/ 
-cd eecs598/Assignment/
+git clone https://github.com/drakesvoboda/DistributedTrainingExperiments
+cd DistributedTrainingExperiments/
 export GLOO_SOCKET_IFNAME=eno1d1
 export TP_SOCKET_IFNAME=eno1d1
 export NCCL_SOCKET_IFNAME=eno1d1
