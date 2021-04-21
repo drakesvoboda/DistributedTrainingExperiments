@@ -15,6 +15,7 @@ import WSJ as WSJ
 from boilerplate import *
 from ASPTrainer import *
 from EASGDTrainer import *
+from EASGDSlicingTrainer import *
 from DDPTrainer import *
 
 # For deterministic runs
@@ -99,21 +100,21 @@ def train(proc_num, args):
                             world_size=args.world_size, 
                             significance_threshold=args.threshold)
     elif args.trainer == 'EASGD':
-        trainer = EASGDTrainer(model=model, 
-                            criterion=criterion, 
-                            optim_fn=lambda params: torch.optim.SGD(params, lr=lr), 
-                            rank=rank, 
-                            world_size=args.world_size, 
-                            tau=args.tau,
-                            stagger=True)
+        trainer = EASGDSlicingTrainer(model=model, 
+                                    criterion=criterion, 
+                                    optim_fn=lambda params: torch.optim.SGD(params, lr=lr), 
+                                    rank=rank, 
+                                    world_size=args.world_size, 
+                                    tau=args.tau,
+                                    stagger=True)
     elif args.trainer == 'EASGD_0':
-        trainer = EASGDTrainer(model=model, 
-                            criterion=criterion, 
-                            optim_fn=lambda params: torch.optim.SGD(params, lr=lr), 
-                            rank=rank, 
-                            world_size=args.world_size, 
-                            tau=args.tau,
-                            stagger=False)
+        trainer = EASGDSlicingTrainer(model=model, 
+                                    criterion=criterion, 
+                                    optim_fn=lambda params: torch.optim.SGD(params, lr=lr), 
+                                    rank=rank, 
+                                    world_size=args.world_size, 
+                                    tau=args.tau,
+                                    stagger=False)
 
     num_epochs = 10
 
