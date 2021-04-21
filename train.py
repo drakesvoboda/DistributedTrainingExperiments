@@ -2,20 +2,20 @@ import argparse
 import os
 import time
 
+from boilerplate import *
+from ASPTrainer import *
+from EASGDTrainer import *
+from DDPTrainer import *
+
+import SVHN as SVHN
+import WSJ as WSJ
+
 import torch
 import torch.multiprocessing as mp
 import torch.nn.functional as F
 
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.data.sampler import RandomSampler
-
-import SVHN as SVHN
-import WSJ as WSJ
-
-from boilerplate import *
-from ASPTrainer import *
-from EASGDTrainer import *
-from DDPTrainer import *
 
 # For deterministic runs
 torch.manual_seed(0)
