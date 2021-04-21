@@ -65,7 +65,7 @@ def train(proc_num, args):
             lr = 1e-3
         elif args.model == "bert": 
             model, convert_tokens_to_ids, convert_tags_to_ids, pad_token_id, num_tags = WSJ.make_bert()
-            lr = 1e-6
+            lr = 1e-4
 
         criterion = WSJ.TaggerLoss(num_tags)
         trainset, validset, collate_fn = WSJ.load_datasets(convert_tokens_to_ids, convert_tags_to_ids, pad_token_id)
@@ -82,7 +82,7 @@ def train(proc_num, args):
     trainloader = DataLoader(trainset, args.batch_size, collate_fn=collate_fn, sampler=sampler, num_workers=0)
     validloader = DataLoader(validset, args.batch_size, collate_fn=collate_fn, num_workers=0)
 
-    model = model.cuda()
+    # model = model.cuda()
 
     if args.trainer == 'DDP':
         trainer = DDPTrainer(model=model, 
