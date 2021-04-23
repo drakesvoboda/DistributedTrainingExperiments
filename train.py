@@ -14,6 +14,7 @@ import WSJ as WSJ
 
 from boilerplate import *
 from ASPTrainer import *
+from GradCompressionTrainer import *
 from EASGDTrainer import *
 from EASGDSlicingTrainer import *
 from DDPTrainer import *
@@ -99,6 +100,13 @@ def train(proc_num, args):
                             rank=rank, 
                             world_size=args.world_size, 
                             significance_threshold=args.threshold)
+    elif args.trainer == 'COMPRESS':
+        trainer = GradCompressionTrainer(model=model, 
+                                        criterion=criterion, 
+                                        optim_fn=lambda params: torch.optim.SGD(params, lr=lr), 
+                                        rank=rank, 
+                                        world_size=args.world_size, 
+                                        significance_threshold=args.threshold)
     elif args.trainer == 'EASGD':
         trainer = EASGDSlicingTrainer(model=model, 
                                     criterion=criterion, 

@@ -34,33 +34,40 @@ class Reducer():
         self.model = model
         self.params, self.param_name_to_idx = get_param_dict(model)
         self.lasts = { key: copy.deepcopy(param.data) for key, param in self.params.items() }
-        self.current_update = { key: torch.zeros_like(p) for key, p in self.params.items() }
+        self.acc = { key: torch.zeros_like(p) for key, p in self.params.items() }
+        self.err = { key: torch.zeros_like(p) for key, p in self.params.items() }
+
+    #def reduce(self, param_name):
+    #    with torch.no_grad():
+    #        param_idx = self.param_name_to_idx[param_name]
+    #        self.acc[param_idx] += self.params[param_idx].grad
+    #        significant_mask = (self.acc[param_idx].abs() / (self.params[param_idx].abs() + 1e-16)) > self.significance_threshold
+    #        if not significant_mask.any():  # if all elements are zeros
+    #            sig = torch.sparse.FloatTensor(*self.acc[param_idx].size())
+    #        else:
+    #            significant_idx = torch.nonzero(significant_mask).t()
+    #            sig = torch.sparse_coo_tensor(significant_idx, self.acc[param_idx][tuple(significant_idx[i] for i in range(significant_idx.shape[0]))], self.acc[param_idx].size())
+    #            self.acc[param_idx][tuple(significant_idx[i] for i in range(significant_idx.shape[0]))] = 0
+    #        return dist.all_reduce(sig, op=dist.ReduceOp.SUM, async_op=True), sig
 
     def reduce(self, param_name):
         with torch.no_grad():
             param_idx = self.param_name_to_idx[param_name]
 
-            #self.current_update[param_idx].add_(self.params[param_idx].grad, alpha=-1e-2)
-            #self.params[param_idx].add_(self.params[param_idx].grad, alpha=-1e-2)
-
-            self.current_update[param_idx].add_(self.params[param_idx] - self.lasts[param_idx])
-            self.lasts[param_idx].copy_(self.params[param_idx].data)
-
-            significant_mask = (self.current_update[param_idx].abs() / (self.params[param_idx].abs() + 1e-16)) > self.significance_threshold
+            self.acc[param_idx] = self.err[param_idx] + self.params[param_idx].grad
+            significant_mask = (self.acc[param_idx].abs() / (self.params[param_idx].abs() + 1e-16)) > self.significance_threshold
 
             if not significant_mask.any():  # if all elements are zeros
-                significant_update = torch.sparse.FloatTensor(*self.current_update[param_idx].size())
+                sig = torch.sparse.FloatTensor(*self.acc[param_idx].size())
             else:
                 significant_idx = torch.nonzero(significant_mask).t()
-                significant_update = torch.sparse_coo_tensor(significant_idx, self.current_update[param_idx][tuple(significant_idx[i] for i in range(significant_idx.shape[0]))], self.current_update[param_idx].size())
-                self.current_update[param_idx][tuple(significant_idx[i] for i in range(significant_idx.shape[0]))] = 0
+                sig = torch.sparse_coo_tensor(significant_idx, self.acc[param_idx][tuple(significant_idx[i] for i in range(significant_idx.shape[0]))], self.acc[param_idx].size())
 
-            # My update gets added back after the all reduce
-            self.params[param_idx].subtract_(significant_update)
+            self.err[param_idx] = self.acc[param_idx] - sig
 
-            return dist.all_reduce(significant_update, op=dist.ReduceOp.SUM, async_op=True), significant_update
+            return dist.all_reduce(sig, op=dist.ReduceOp.SUM, async_op=True), sig
 
-class ASPTrainer(Trainer):
+class GradCompressionTrainer(Trainer):
     def __init__(self, model: torch.nn.Module, criterion: callable, optim_fn: callable, rank: int, world_size: int, significance_threshold: float):
         super().__init__(model, criterion, None)
 
@@ -87,15 +94,13 @@ class ASPTrainer(Trainer):
             if len(list(module.parameters())) <= 0 or len(list(module.children())) > 0: continue
             module.updates = None
             module.optimizer = self.optim_fn(module.parameters(recurse=False))
-            module.register_full_backward_hook(ASPTrainer.backwards_pass_hook(self.reducer, name))
-            module.register_forward_pre_hook(ASPTrainer.forward_pre_hook(self.reducer, name))
+            module.register_full_backward_hook(GradCompressionTrainer.backwards_pass_hook(self.reducer, name))
+            module.register_forward_pre_hook(GradCompressionTrainer.forward_pre_hook(self.reducer, name))
 
     @staticmethod
     def backwards_pass_hook(reducer, module_name):
         def hook(self, *args):
             if not self.training: return
-            self.optimizer.step()
-            self.optimizer.zero_grad()
             self.updates = {param_name: reducer.reduce(f"{module_name}.{param_name}") for param_name, _ in self.named_parameters(recurse=False)}
             self.zero_grad()
 
@@ -110,8 +115,10 @@ class ASPTrainer(Trainer):
                 for param_name, param in self.named_parameters(recurse=False):
                     fut, update = self.updates[param_name]
                     fut.wait()
-                    param.data.add_(update / reducer.world_size)
-                
+                    param.grad = update / reducer.world_size
+
+                self.optimizer.step()
+                self.optimizer.zero_grad()    
                 self.updates = None
 
         return hook
@@ -123,6 +130,6 @@ class ASPTrainer(Trainer):
         loss.backward()  
 
         # Backwards hook for the first module in the network is not called by pytorch, call it here manually.
-        ASPTrainer.backwards_pass_hook(self.reducer, self.first_name)(self.first_module)
+        GradCompressionTrainer.backwards_pass_hook(self.reducer, self.first_name)(self.first_module)
    
         return output, loss   
